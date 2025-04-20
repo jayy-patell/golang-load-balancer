@@ -45,12 +45,11 @@ func LoadBalancerHandler(pool *ServerPool) *httputil.ReverseProxy {
 		log.Printf("Forwarding request to: %s", target.String())
 
 		req.URL.Scheme = target.Scheme
+		log.Printf("Req URL Scheme: %s, Target URL Scheme: %s", req.URL.Scheme, target.Scheme)
 		req.URL.Host = target.Host
+		log.Printf("Req URL Host: %s, Target URL Host: %s", req.URL.Host, target.Host)
 		req.URL.Path = target.Path + req.URL.Path
-
-		// if target.Host != "" {
-		// 	req.Host = target.Host
-		// }
+		log.Printf("Req URL Path: %s, Target URL Path: %s", req.URL.Path, target.Path)
 	}
 
 	return &httputil.ReverseProxy{
@@ -64,13 +63,14 @@ func LoadBalancerHandler(pool *ServerPool) *httputil.ReverseProxy {
 }
 
 func MakeLoadBalancer(amount int) {
+	// Initialising the pool
 	serverPool := &ServerPool{
 		backends: make([]*Backend, 0),
 		current:  0,
 	}
 
 	for i := 0; i < amount; i++ {
-		serverPool.backends = append(serverPool.backends, createEndpoint(baseURL, i))
+		serverPool.backends = append(serverPool.backends, addEnpoint(baseURL, i))
 	}
 
 	// Create a single reverse proxy
@@ -91,7 +91,7 @@ func MakeLoadBalancer(amount int) {
 	log.Fatal(server.ListenAndServe())
 }
 
-func createEndpoint(endpoint string, idx int) *Backend {
+func addEnpoint(endpoint string, idx int) *Backend {
 	link := endpoint + strconv.Itoa(idx)
 	url, err := url.Parse(link)
 	if err != nil {
