@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"sync"
+	"time"
 )
 
 func RunServers(amount int) {
@@ -47,6 +48,23 @@ func startServer(serverID int, wg *sync.WaitGroup) {
 		Addr:    addr,
 		Handler: router,
 	}
+
+	// Handler functions
+	router.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, "Server %d is healthy", serverID)
+	})
+
+	router.HandleFunc("/shutdown", func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("Server %d is shutting down...", serverID)
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, "Server %d shutting down", serverID)
+
+		go func() {
+			time.Sleep(1 * time.Second)
+			server.Close()
+		}()
+	})
 
 	// Start server (this blocks until the server stops)
 	if err := server.ListenAndServe(); err != nil {

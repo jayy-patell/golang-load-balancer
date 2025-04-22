@@ -23,7 +23,15 @@ type ServerPool struct {
 
 // Backend represents a single backend server
 type Backend struct {
-	URL *url.URL
+	URL   *url.URL
+	Alive bool
+	mutex sync.RWMutex
+}
+
+func (b *Backend) IsAlive() bool {
+	b.mutex.RLock()
+	defer b.mutex.RUnlock()
+	return b.Alive
 }
 
 // GetNextBackend returns the next available backend server
@@ -31,17 +39,33 @@ func (s *ServerPool) GetNextBackend() *Backend {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
-	backend := s.backends[s.current]
-	s.current = (s.current + 1) % len(s.backends) //update current with next server
-	return backend                                //return the previous server
+	n := len(s.backends)
+	for i := 0; i < n; i++ {
+		index := (s.current + i) % n
+		backend := s.backends[index]
+
+		if checkBackendHealth(backend.URL) {
+			// Set the next backend as the starting point for round-robin selection
+			s.current = (index + 1) % n
+
+			// Return the current healthy backend to handle the request
+			return backend
+		}
+	}
+	return nil // No healthy server found
 }
 
 // LoadBalancerHandler creates a custom director for the reverse proxy
 func LoadBalancerHandler(pool *ServerPool) *httputil.ReverseProxy {
 	director := func(req *http.Request) {
 		backend := pool.GetNextBackend()
-		target := backend.URL
+		if backend == nil {
+			log.Printf("No healthy backends available")
+			req.URL = nil
+			return
+		}
 
+		target := backend.URL
 		log.Printf("Forwarding request to: %s", target.String())
 
 		req.URL.Scheme = target.Scheme
@@ -60,6 +84,16 @@ func LoadBalancerHandler(pool *ServerPool) *httputil.ReverseProxy {
 			fmt.Fprintf(w, "Service Unavailable: %v", err)
 		},
 	}
+}
+
+// checkBackendHealth does a single /health call to validate a backend
+func checkBackendHealth(url *url.URL) bool {
+	resp, err := http.Get(url.String() + "/health")
+	if err != nil || resp.StatusCode != http.StatusOK {
+		log.Printf("Health check failed for %s", url)
+		return false
+	}
+	return true
 }
 
 func MakeLoadBalancer(amount int) {
@@ -99,5 +133,10 @@ func addEnpoint(endpoint string, idx int) *Backend {
 		return nil
 	}
 	log.Printf("Added endpoint: %s", url.String())
-	return &Backend{URL: url}
+
+	resp, err := http.Get(url.String())
+	if err != nil || resp.StatusCode != http.StatusOK {
+		return &Backend{URL: url, Alive: false}
+	}
+	return &Backend{URL: url, Alive: true}
 }
