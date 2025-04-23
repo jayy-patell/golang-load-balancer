@@ -8,7 +8,8 @@ import (
 	"time"
 )
 
-func RunServers(amount int) {
+// RunServers starts multiple dummy servers from a base port
+func RunServers(basePort int, amount int) {
 	if amount > 10 {
 		log.Fatal("Amount of servers cannot exceed 10")
 	}
@@ -19,7 +20,7 @@ func RunServers(amount int) {
 
 	// Start each server with its own index/port
 	for i := 0; i < amount; i++ {
-		go startServer(i, &wg)
+		go startServer(basePort+i, i, &wg)
 	}
 
 	// Wait for all servers to start
@@ -27,7 +28,8 @@ func RunServers(amount int) {
 	log.Printf("All %d servers started successfully", amount)
 }
 
-func startServer(serverID int, wg *sync.WaitGroup) {
+// startServer sets up and runs a dummy server on a given port
+func startServer(port int, serverID int, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	// Create router
@@ -36,13 +38,17 @@ func startServer(serverID int, wg *sync.WaitGroup) {
 	// Configure route handler
 	router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Server %d handling request %s", serverID, r.URL.Path)
+
+		// Simulate heavy load
+		time.Sleep(2 * time.Second)
+
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, "Response from Server %d", serverID)
 	})
 
 	// Configure server
-	addr := fmt.Sprintf(":808%d", serverID)
-	log.Printf("Starting server on %s", addr)
+	addr := fmt.Sprintf(":%d", port)
+	log.Printf("Starting server %d on %s", serverID, addr)
 
 	server := http.Server{
 		Addr:    addr,
