@@ -12,6 +12,7 @@ const (
 	RoundRobinStrategy         StrategyType = "round_robin"
 	WeightedRoundRobinStrategy StrategyType = "weighted_round_robin"
 	LeastConnectionsStrategy   StrategyType = "least_connections"
+	IPHashStrategy             StrategyType = "ip_hash"
 )
 
 type Strategy interface {
@@ -29,6 +30,9 @@ func NewStrategy(strategy StrategyType, backends []*backend.Backend) Strategy {
 		return NewWeightedRRPool(backends)
 	case LeastConnectionsStrategy:
 		return NewLeastConnections(backends)
+	case IPHashStrategy:
+		return NewIPHash(backends)
+
 	default:
 		log.Fatal("Invalid algorithm. Use: rr, wrr, ip, lc")
 		return nil

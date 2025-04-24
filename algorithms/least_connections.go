@@ -23,12 +23,15 @@ func (lc *LeastConnections) GetNextBackend() *backend.Backend {
 	minConnections := -1
 
 	for _, b := range lc.backends {
-		if !backend.CheckBackendHealth(b.URL) {
+		log.Printf("Checking %s, alive: %v, active: %d", b.URL.String(), b.IsAlive(), b.GetConnections())
+		if !b.IsAlive() {
 			continue
 		}
+
 		b.ActiveConnMutex.RLock()
 		curConnections := b.ActiveConnections
 		b.ActiveConnMutex.RUnlock()
+
 		if minConnections == -1 || curConnections < minConnections {
 			best = b
 			minConnections = curConnections
@@ -36,7 +39,7 @@ func (lc *LeastConnections) GetNextBackend() *backend.Backend {
 	}
 	if best != nil {
 		best.IncrementConnections()
-		log.Printf("Server %s has %d active connections", best.URL.String(), best.ActiveConnections)
+		log.Printf("Best Server %s has %d active connections", best.URL.String(), best.ActiveConnections)
 	}
 	return best
 }

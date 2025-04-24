@@ -29,14 +29,14 @@ func (rr *RoundRobin) GetNextBackend() *backend.Backend {
 	n := len(rr.backends)
 	for i := 0; i < n; i++ {
 		index := (rr.current + i) % n
-		server := rr.backends[index]
+		backend := rr.backends[index]
 
-		if backend.CheckBackendHealth(server.URL) {
+		if backend.IsAlive() {
 			// Set the next backend as the starting point for round-robin selection
 			rr.current = (index + 1) % n
 
 			// Return the current healthy backend to handle the request
-			return server
+			return backend
 		}
 	}
 	return nil // No healthy server found

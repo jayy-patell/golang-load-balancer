@@ -6,30 +6,31 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"golang-load-balancer/backend"
 )
 
-// RunServers starts multiple dummy servers from a base port
-func RunServers(basePort int, amount int) {
-	if amount > 10 {
+// RunServers starts multiple dummy servers using the given backend instances
+func RunServers(basePort int, backends []*backend.Backend) {
+	if len(backends) > 10 {
 		log.Fatal("Amount of servers cannot exceed 10")
 	}
 
 	// Waitgroup to track when all servers are started
 	var wg sync.WaitGroup
-	wg.Add(amount)
+	wg.Add(len(backends))
 
-	// Start each server with its own index/port
-	for i := 0; i < amount; i++ {
-		go startServer(basePort+i, i, &wg)
+	for i, b := range backends {
+		go startServer(basePort+i, i, b, &wg)
 	}
 
 	// Wait for all servers to start
 	wg.Wait()
-	log.Printf("All %d servers started successfully", amount)
+	log.Printf("All %d servers started successfully", len(backends))
 }
 
 // startServer sets up and runs a dummy server on a given port
-func startServer(port int, serverID int, wg *sync.WaitGroup) {
+func startServer(port int, serverID int, b *backend.Backend, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	// Create router
@@ -57,8 +58,13 @@ func startServer(port int, serverID int, wg *sync.WaitGroup) {
 
 	// Handler functions
 	router.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, "Server %d is healthy", serverID)
+		if b.IsAlive() {
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprintf(w, "Server %d is healthy", serverID)
+		} else {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			fmt.Fprintf(w, "Server %d is unhealthy", serverID)
+		}
 	})
 
 	router.HandleFunc("/shutdown", func(w http.ResponseWriter, r *http.Request) {
@@ -66,8 +72,10 @@ func startServer(port int, serverID int, wg *sync.WaitGroup) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, "Server %d shutting down", serverID)
 
+		b.SetAlive(false) // mark as unhealthy
+
 		go func() {
-			time.Sleep(1 * time.Second)
+			time.Sleep(1 * time.Second) // wait for inflight requests
 			server.Close()
 		}()
 	})

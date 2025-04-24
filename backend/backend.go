@@ -24,6 +24,12 @@ func (b *Backend) IsAlive() bool {
 	return b.Alive
 }
 
+func (b *Backend) SetAlive(alive bool) {
+	b.mutex.Lock()
+	defer b.mutex.Unlock()
+	b.Alive = alive
+}
+
 func (b *Backend) IncrementConnections() {
 	b.ActiveConnMutex.Lock()
 	defer b.ActiveConnMutex.Unlock()

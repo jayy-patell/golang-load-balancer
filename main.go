@@ -5,6 +5,7 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"time"
 
 	"golang-load-balancer/algorithms"
 	"golang-load-balancer/loadbalancer"
@@ -28,6 +29,8 @@ func main() {
 		strategyType = algorithms.WeightedRoundRobinStrategy
 	case "lc":
 		strategyType = algorithms.LeastConnectionsStrategy
+	case "ip":
+		strategyType = algorithms.IPHashStrategy
 	default:
 		log.Fatalf("Unknown strategy: %s. Use one of: rr, wrr, lc, ip", *algoFlag)
 	}
@@ -50,21 +53,28 @@ func main() {
 		}
 	}
 
-	// Start dummy backend servers
 	basePort := 8080
-	log.Println("Starting backend servers...")
-	go servers.RunServers(basePort, *numFlag)
 
-	// Set up load balancer
+	// Initialize server pool and backends
 	serverPool := loadbalancer.NewServerPool(strategyType)
 	for i := 0; i < *numFlag; i++ {
-		weight := i + 1 // Arbitrary weights for testing
-		serverPool.AddBackend("http://localhost:", basePort+i, weight)
+		serverPool.AddBackend("http://localhost:", basePort+i, weights[i])
 	}
 	serverPool.InitStrategy(strategyType)
 
-	// Start proxy
+	// 🔁 Start backend servers AFTER creating them
+	log.Println("Starting backend servers...")
+	go servers.RunServers(basePort, serverPool.GetBackends())
+
+	// Start health checker
+	go loadbalancer.StartHealthChecker(serverPool, 20*time.Second)
+
+	// Start proxy server
 	loadbalancer.StartProxy(":8090", serverPool)
 }
 
-// go run main.go --algo=wrr --n=3 --weights=5,2,3
+// go run main.go -algo=rr -n=5
+// go run main.go --algo=wrr --n=3 --weights=5,1,1
+// go run main.go --algo=lc --n=3
+// to test LC -> $for /L %i in (1,1,20) do start /B curl http://localhost:8090/loadbalancer
+// go run main.go --algo=ip --n=3

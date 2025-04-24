@@ -2,50 +2,70 @@ package loadbalancer
 
 import (
 	"fmt"
-	"golang-load-balancer/algorithms"
 	"log"
 	"net/http"
 	"net/http/httputil"
+
+	"golang-load-balancer/algorithms"
+	"golang-load-balancer/backend"
 )
 
+// Custom ResponseWriter to detect when the response is sent
+type responseWriter struct {
+	http.ResponseWriter
+	backend     *backend.Backend
+	wroteHeader bool
+}
+
+func (rw *responseWriter) WriteHeader(statusCode int) {
+	if !rw.wroteHeader {
+		rw.wroteHeader = true
+		rw.backend.DecrementConnections()
+		// log.Printf("Decremented. Server %s now has %d active connections", rw.backend.URL.String(), rw.backend.GetConnections())
+	}
+	rw.ResponseWriter.WriteHeader(statusCode)
+}
+
+func (rw *responseWriter) Write(b []byte) (int, error) {
+	if !rw.wroteHeader {
+		// Ensure Decrement is called even if WriteHeader wasn't explicitly called
+		rw.WriteHeader(http.StatusOK)
+	}
+	return rw.ResponseWriter.Write(b)
+}
+
 func StartProxy(port string, pool *ServerPool) {
-	proxy := &httputil.ReverseProxy{
-		Director: func(req *http.Request) {
-			backend := pool.GetNextBackend()
-			if backend == nil {
-				log.Printf("No healthy backends available")
-				req.URL = nil
-				return
-			}
+	router := http.NewServeMux()
 
-			// Only decrement for Least Connections strategy
-			if pool.GetStrategyType() == algorithms.LeastConnectionsStrategy {
-				defer log.Printf("Decremented.. Active Connections: %d", backend.ActiveConnections)
-				defer backend.DecrementConnections() // Decrement after request is handled
-				defer log.Printf("Decremented.. Active Connections: %d", backend.ActiveConnections)
-			}
+	router.HandleFunc("/loadbalancer", func(w http.ResponseWriter, r *http.Request) {
+		backend := pool.GetNextBackend()
+		if backend == nil {
+			log.Printf("No healthy backends available")
+			http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
+			return
+		}
 
-			target := backend.URL
-			log.Printf("Forwarding request to: %s", target.String())
+		target := backend.URL
+		r.URL.Scheme = target.Scheme
+		r.URL.Host = target.Host
+		r.URL.Path = target.Path + r.URL.Path
 
-			req.URL.Scheme = target.Scheme
-			log.Printf("Req URL Scheme: %s, Target URL Scheme: %s", req.URL.Scheme, target.Scheme)
-			req.URL.Host = target.Host
-			log.Printf("Req URL Host: %s, Target URL Host: %s", req.URL.Host, target.Host)
-			req.URL.Path = target.Path + req.URL.Path
-			log.Printf("Req URL Path: %s, Target URL Path: %s", req.URL.Path, target.Path)
+		log.Printf("Forwarding request to: %s", target.String())
 
-			// or http.Redirect
-		},
-		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+		proxy := httputil.NewSingleHostReverseProxy(target)
+		proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 			log.Printf("Proxy error: %v", err)
 			w.WriteHeader(http.StatusServiceUnavailable)
 			fmt.Fprint(w, "Service unavailable")
-		},
-	}
+		}
 
-	router := http.NewServeMux()
-	router.Handle("/loadbalancer", proxy)
+		// Use custom writer only for LeastConnections
+		if pool.GetStrategyType() == algorithms.LeastConnectionsStrategy {
+			proxy.ServeHTTP(&responseWriter{ResponseWriter: w, backend: backend}, r)
+		} else {
+			proxy.ServeHTTP(w, r)
+		}
+	})
 
 	log.Printf("Starting Load Balancer on %s", port)
 	log.Fatal(http.ListenAndServe(port, router))

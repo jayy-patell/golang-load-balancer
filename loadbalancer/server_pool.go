@@ -27,6 +27,10 @@ func (s *ServerPool) InitStrategy(strategyType algorithms.StrategyType) {
 	s.strategy = algorithms.NewStrategy(strategyType, s.backends)
 }
 
+func (s *ServerPool) GetBackends() []*backend.Backend {
+	return s.backends
+}
+
 func (s *ServerPool) GetNextBackend() *backend.Backend {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
@@ -54,10 +58,10 @@ func (s *ServerPool) AddBackend(endpoint string, idx int, weight int) {
 	}
 
 	b := &backend.Backend{
-		URL:           parsedURL,
-		Alive:         backend.CheckBackendHealth(parsedURL),
-		Weight:        weight,
-		CurrentWeight: 0,
+		URL:               parsedURL,
+		Alive:             true, // assume
+		Weight:            weight,
+		CurrentWeight:     0,
 		ActiveConnections: 0,
 	}
 	s.backends = append(s.backends, b)
