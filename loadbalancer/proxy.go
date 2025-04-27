@@ -8,6 +8,7 @@ import (
 
 	"golang-load-balancer/algorithms"
 	"golang-load-balancer/backend"
+	"golang-load-balancer/ratelimiter"
 )
 
 // Custom ResponseWriter to detect when the response is sent
@@ -34,10 +35,28 @@ func (rw *responseWriter) Write(b []byte) (int, error) {
 	return rw.ResponseWriter.Write(b)
 }
 
-func StartProxy(port string, pool *ServerPool) {
+var (
+	limiter ratelimiter.Limiter
+)
+
+func StartProxy(port string, pool *ServerPool, limiterType string, rate int, burst int) {
 	router := http.NewServeMux()
 
+	if limiterType != "none" {
+		limiter = ratelimiter.NewLimiter(limiterType, rate, burst)
+		if limiter == nil {
+			log.Fatalf("Invalid limiter type: %s", limiterType)
+		}
+		log.Printf("Rate limiter '%s' initialized with rate=%d, burst=%d", limiterType, rate, burst)
+	}
+
 	router.HandleFunc("/loadbalancer", func(w http.ResponseWriter, r *http.Request) {
+		if limiter != nil && !limiter.Allow(r) {
+			log.Printf("Rate limit exceeded for client")
+			http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
+			return
+		}
+
 		backend := pool.GetNextBackend()
 		if backend == nil {
 			log.Printf("No healthy backends available")
