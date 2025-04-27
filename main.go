@@ -86,3 +86,7 @@ func main() {
 // go run main.go -algo=rr -n=3 -limiter=token -rate=10 -burst=5
 // go run main.go -algo=rr -n=3 -limiter=fixed -rate=5
 // go run main.go -algo=rr -n=3 -limiter=leaky -rate=8 -burst=3
+
+// to test per-client-IP rate limiter ->
+// go run main.go -algo=rr -n=3 -limiter=fixed -rate=2 -burst=2
+// $for /L %i in (1,1,6) do start /B curl -H "X-Forwarded-For: 1.2.3.4" http://localhost:8090/loadbalancer
