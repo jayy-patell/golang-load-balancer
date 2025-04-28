@@ -5,9 +5,12 @@ import (
 	"log"
 	"net/http"
 	"net/http/httputil"
+	"strings"
+	"sync"
 
 	"golang-load-balancer/algorithms"
 	"golang-load-balancer/backend"
+	"golang-load-balancer/ratelimiter"
 )
 
 // Custom ResponseWriter to detect when the response is sent
@@ -34,10 +37,57 @@ func (rw *responseWriter) Write(b []byte) (int, error) {
 	return rw.ResponseWriter.Write(b)
 }
 
-func StartProxy(port string, pool *ServerPool) {
+// for per-client-ip rate limiting
+var (
+	limiterTypeGlobal string
+	rateGlobal        int
+	burstGlobal       int
+	clientLimiters    = make(map[string]ratelimiter.Limiter)
+	clientLimiterLock = sync.RWMutex{}
+)
+
+func allowRequest(r *http.Request) bool {
+	clientIP := r.RemoteAddr
+	if ip := r.Header.Get("X-Real-IP"); ip != "" {
+		clientIP = ip
+	} else if ip = r.Header.Get("X-Forwarded-For"); ip != "" {
+		clientIP = strings.Split(ip, ",")[0]
+	}
+
+	clientLimiterLock.RLock()
+	limiter, exists := clientLimiters[clientIP]
+	clientLimiterLock.RUnlock()
+
+	if !exists {
+		clientLimiterLock.Lock()
+		limiter = ratelimiter.NewLimiter(limiterTypeGlobal, rateGlobal, burstGlobal)
+		clientLimiters[clientIP] = limiter
+		clientLimiterLock.Unlock()
+		log.Printf("Created new limiter for client %s", clientIP)
+	}
+
+	if !limiter.Allow(r) {
+		log.Printf("Rate limit exceeded for client %s", clientIP)
+		return false
+	}
+	return true
+}
+
+func StartProxy(port string, pool *ServerPool, limiterType string, rate int, burst int) {
 	router := http.NewServeMux()
 
+	limiterTypeGlobal = limiterType
+	rateGlobal = rate
+	burstGlobal = burst
+
 	router.HandleFunc("/loadbalancer", func(w http.ResponseWriter, r *http.Request) {
+		// check if client is requesting within limit
+		if !allowRequest(r) {
+			http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
+			return
+		}
+
+		// serve next backend if allowed
 		backend := pool.GetNextBackend()
 		if backend == nil {
 			log.Printf("No healthy backends available")
