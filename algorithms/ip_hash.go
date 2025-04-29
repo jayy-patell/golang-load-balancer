@@ -22,10 +22,14 @@ func (ih *IPHash) GetStrategyType() StrategyType {
 	return IPHashStrategy
 }
 
-// GetNextBackend returns the next backend based on the client's IP address
+func (h *IPHash) UpdateBackends(backends []*backend.Backend) {
+	h.backends = backends
+}
+
+// GetNextBackend returns the same backend for same hash value
 func (ip *IPHash) GetNextBackend() *backend.Backend {
-	// Get client IP from request context (you would get this in a real scenario)
-	clientIP := "192.168.1.100" // Replace this with actual client IP in real proxy setup
+	// Get real client IP from request context (you would get this in a real scenario)
+	clientIP := "192.168.1.100"
 
 	// Hash the client IP address using CRC32 to determine the backend
 	hash := crc32.ChecksumIEEE([]byte(clientIP))

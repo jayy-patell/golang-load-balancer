@@ -18,6 +18,10 @@ func (lc *LeastConnections) GetStrategyType() StrategyType {
 	return LeastConnectionsStrategy
 }
 
+func (l *LeastConnections) UpdateBackends(backends []*backend.Backend) {
+	l.backends = backends
+}
+
 func (lc *LeastConnections) GetNextBackend() *backend.Backend {
 	var best *backend.Backend
 	minConnections := -1

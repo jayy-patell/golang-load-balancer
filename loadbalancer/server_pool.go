@@ -1,6 +1,7 @@
 package loadbalancer
 
 import (
+	"fmt"
 	"log"
 	"net/url"
 	"strconv"
@@ -49,7 +50,7 @@ func (s *ServerPool) GetStrategyType() algorithms.StrategyType {
 	return ""
 }
 
-func (s *ServerPool) AddBackend(endpoint string, idx int, weight int) {
+func (s *ServerPool) AddBackendUsingIndex(endpoint string, idx int, weight int) {
 	link := endpoint + strconv.Itoa(idx)
 	parsedURL, err := url.Parse(link)
 	if err != nil {
@@ -66,4 +67,52 @@ func (s *ServerPool) AddBackend(endpoint string, idx int, weight int) {
 	}
 	s.backends = append(s.backends, b)
 	log.Printf("Added backend: %s", b.URL.String())
+}
+
+// Dynamic AddBackend at runtime
+func (s *ServerPool) AddBackendDynamic(backendURL string, weight int) (*backend.Backend, error) {
+	parsedURL, err := url.Parse(backendURL)
+	if err != nil {
+		return nil, err
+	}
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	b := &backend.Backend{
+		URL:               parsedURL,
+		Alive:             true,
+		Weight:            weight,
+		CurrentWeight:     0,
+		ActiveConnections: 0,
+	}
+	s.backends = append(s.backends, b)
+
+	// Important: Reinitialize strategy because number of backends changed
+	if s.strategy != nil {
+		s.strategy.UpdateBackends(s.backends)
+	}
+
+	log.Printf("Dynamically added backend: %s", backendURL)
+	return b, nil
+}
+
+// Dynamic RemoveBackend at runtime
+func (s *ServerPool) RemoveBackendDynamic(backendURL string) error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	for i, b := range s.backends {
+		if b.URL.String() == backendURL {
+			s.backends = append(s.backends[:i], s.backends[i+1:]...)
+
+			// Important: Reinitialize strategy because number of backends changed
+			if s.strategy != nil {
+				s.strategy.UpdateBackends(s.backends)
+			}
+
+			log.Printf("Dynamically removed backend: %s", backendURL)
+			return nil
+		}
+	}
+	return fmt.Errorf("backend %s not found", backendURL)
 }

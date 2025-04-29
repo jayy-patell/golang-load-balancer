@@ -18,6 +18,7 @@ const (
 type Strategy interface {
 	GetNextBackend() *backend.Backend
 	GetStrategyType() StrategyType
+	UpdateBackends([]*backend.Backend)
 }
 
 // Any struct that has a GetNextBackend() method with this exact signature can be treated as a Strategy.

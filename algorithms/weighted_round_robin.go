@@ -21,6 +21,10 @@ func (wrr *WeightedRoundRobin) GetStrategyType() StrategyType {
 	return WeightedRoundRobinStrategy
 }
 
+func (w *WeightedRoundRobin) UpdateBackends(backends []*backend.Backend) {
+	w.backends = backends
+}
+
 func (wrr *WeightedRoundRobin) GetNextBackend() *backend.Backend {
 	wrr.mutex.Lock()
 	defer wrr.mutex.Unlock()

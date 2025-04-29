@@ -9,7 +9,7 @@ import (
 
 	"golang-load-balancer/algorithms"
 	"golang-load-balancer/loadbalancer"
-	"golang-load-balancer/servers"
+	"golang-load-balancer/backend"
 )
 
 func main() {
@@ -19,8 +19,8 @@ func main() {
 	weightsFlag := flag.String("weights", "", "Comma-separated weights for each server (used with wrr)")
 
 	limiterFlag := flag.String("limiter", "none", "Rate limiter algorithm: none, token, fixed, leaky")
-	rateFlag := flag.Int("rate", 5, "Allowed number of requests per second")
-	burstFlag := flag.Int("burst", 5, "Burst size (only for token and leaky bucket)")
+	rateFlag := flag.Int("rate", 0, "Allowed number of requests per second")
+	burstFlag := flag.Int("burst", 0, "Burst size (only for token and leaky bucket)")
 
 	flag.Parse()
 
@@ -51,9 +51,8 @@ func main() {
 			weights = append(weights, parsed)
 		}
 	} else {
-		// Default weight = 1 for each
 		for i := 0; i < *numFlag; i++ {
-			weights = append(weights, 1)
+			weights = append(weights, 1) // Default weight
 		}
 	}
 
@@ -62,13 +61,13 @@ func main() {
 	// Initialize server pool and backends
 	serverPool := loadbalancer.NewServerPool(strategyType)
 	for i := 0; i < *numFlag; i++ {
-		serverPool.AddBackend("http://localhost:", basePort+i, weights[i])
+		serverPool.AddBackendUsingIndex("http://localhost:", basePort+i, weights[i])
 	}
 	serverPool.InitStrategy(strategyType)
 
-	// 🔁 Start backend servers AFTER creating them
+	// Start backend servers AFTER creating them
 	log.Println("Starting backend servers...")
-	go servers.RunServers(basePort, serverPool.GetBackends())
+	go backend.RunServers(basePort, serverPool.GetBackends())
 
 	// Start health checker
 	go loadbalancer.StartHealthChecker(serverPool, 20*time.Second)
@@ -76,17 +75,3 @@ func main() {
 	// Start proxy server
 	loadbalancer.StartProxy(":8090", serverPool, *limiterFlag, *rateFlag, *burstFlag)
 }
-
-// go run main.go -algo=rr -n=5
-// go run main.go --algo=wrr --n=3 --weights=5,1,1
-// go run main.go --algo=lc --n=3
-// to test LC -> $for /L %i in (1,1,20) do start /B curl http://localhost:8090/loadbalancer
-// go run main.go --algo=ip --n=3
-
-// go run main.go -algo=rr -n=3 -limiter=token -rate=10 -burst=5
-// go run main.go -algo=rr -n=3 -limiter=fixed -rate=5
-// go run main.go -algo=rr -n=3 -limiter=leaky -rate=8 -burst=3
-
-// to test per-client-IP rate limiter ->
-// go run main.go -algo=rr -n=3 -limiter=fixed -rate=2 -burst=2
-// $for /L %i in (1,1,6) do start /B curl -H "X-Forwarded-For: 1.2.3.4" http://localhost:8090/loadbalancer

@@ -22,6 +22,10 @@ func (rr *RoundRobin) GetStrategyType() StrategyType {
 	return RoundRobinStrategy
 }
 
+func (r *RoundRobin) UpdateBackends(backends []*backend.Backend) {
+	r.backends = backends
+}
+
 func (rr *RoundRobin) GetNextBackend() *backend.Backend {
 	rr.mutex.Lock()
 	defer rr.mutex.Unlock()
